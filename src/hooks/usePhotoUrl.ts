@@ -1,0 +1,2 @@
+import{useEffect,useState}from'react';import{getSignedUrl}from'../lib/photos'
+export function usePhotoUrl(path?:string){const[url,setUrl]=useState<string>(),[loading,setLoading]=useState(Boolean(path)),[error,setError]=useState<string>();useEffect(()=>{let live=true;if(!path){setUrl(undefined);setLoading(false);return}setLoading(true);getSignedUrl(path).then(x=>live&&setUrl(x)).catch(e=>live&&setError(e.message)).finally(()=>live&&setLoading(false));return()=>{live=false}},[path]);return{url,loading,error}}

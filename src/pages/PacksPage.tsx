@@ -1,2 +1,83 @@
-import {Link}from'react-router-dom';import{Container}from'../components/ui/Container';import{useAuthStore}from'../store/authStore';import{useOrderStore}from'../store/orderStore';import{getProductById}from'../data/products';import{usage}from'../data/usage';import{now}from'../store/timeStore';import{useCartStore}from'../store/cartStore';import{useCouponStore}from'../store/couponStore'
-export function PacksPage(){const user=useAuthStore(s=>s.currentUser)!;const orders=useOrderStore(s=>s.getOrdersByUser(user.id));const add=useCartStore(s=>s.addItem),award=useCouponStore(s=>s.award);const packs=orders.flatMap(o=>o.items.map(i=>({...i,createdAt:o.createdAt})));return <main className="py-10"><Container><h1 className="text-3xl font-semibold text-primary">My packs</h1>{!packs.length?<p className="mt-5">No packs to plan yet. <Link className="text-accent underline" to="/shop">Shop now</Link></p>:<div className="mt-6 grid gap-4 sm:grid-cols-2">{packs.map((i,n)=>{const p=getProductById(i.productId)!,u=usage[p.id],days=Math.max(0,Math.ceil(u.packDurationDays-(now().getTime()-new Date(i.createdAt).getTime())/86400000)),pct=Math.max(0,Math.min(100,days/u.packDurationDays*100)),low=days<=10;return <article key={n} className="rounded-card bg-sky p-5"><b>{p.name}</b><p className="mt-2 text-sm">{low?'Refill now':days<20?'Running low':'Fresh'} · about {days} days left</p><div className="mt-3 h-2 rounded-pill bg-background"><div className="h-full rounded-pill bg-accent" style={{width:`${pct}%`}}/></div><button onClick={()=>{if(low)award(user.id,{code:`REFILL${p.id.slice(0,4).toUpperCase()}`,label:'Refill saver',type:'percent',value:5,productId:p.id,expiresAt:new Date(now().getTime()+604800000).toISOString(),used:false});add({productId:p.id,variantLabel:i.variantLabel},1)}} className="mt-4 rounded-pill bg-primary px-4 py-2 text-xs font-bold text-background">REFILL</button></article>})}</div>}</Container></main>}
+import { Link } from 'react-router-dom';
+import { Container } from '../components/ui/Container';
+import { useAuthStore } from '../store/authStore';
+import { useOrderStore } from '../store/orderStore';
+import { getProductById } from '../data/products';
+import { usage } from '../data/usage';
+import { now } from '../store/timeStore';
+import { useCartStore } from '../store/cartStore';
+import { useCouponStore } from '../store/couponStore';
+
+export function PacksPage() {
+  const user = useAuthStore(s => s.currentUser)!;
+
+  // Fix: select the raw `orders` array and filter here rather than calling
+  // `getOrdersByUser` inside the selector.  `getOrdersByUser` returns a new
+  // array reference on every call, which makes Zustand think the state changed
+  // on every render, causing an infinite "maximum update depth exceeded" loop.
+  const allOrders = useOrderStore(s => s.orders);
+  const orders = allOrders.filter(o => o.userId === user.id);
+
+  const add = useCartStore(s => s.addItem);
+  const award = useCouponStore(s => s.award);
+
+  const packs = orders.flatMap(o => o.items.map(i => ({ ...i, createdAt: o.createdAt })));
+
+  return (
+    <main className="py-10">
+      <Container>
+        <h1 className="text-3xl font-semibold text-primary">My packs</h1>
+        {!packs.length ? (
+          <p className="mt-5">
+            No packs to plan yet.{' '}
+            <Link className="text-accent underline" to="/shop">
+              Shop now
+            </Link>
+          </p>
+        ) : (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {packs.map((i, n) => {
+              const p = getProductById(i.productId)!;
+              const u = usage[p.id];
+              const days = Math.max(
+                0,
+                Math.ceil(u.packDurationDays - (now().getTime() - new Date(i.createdAt).getTime()) / 86400000),
+              );
+              const pct = Math.max(0, Math.min(100, (days / u.packDurationDays) * 100));
+              const low = days <= 10;
+              return (
+                <article key={n} className="rounded-card bg-sky p-5">
+                  <b>{p.name}</b>
+                  <p className="mt-2 text-sm">
+                    {low ? 'Refill now' : days < 20 ? 'Running low' : 'Fresh'} · about {days} days left
+                  </p>
+                  <div className="mt-3 h-2 rounded-pill bg-background">
+                    <div className="h-full rounded-pill bg-accent" style={{ width: `${pct}%` }} />
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (low)
+                        award(user.id, {
+                          code: `REFILL${p.id.slice(0, 4).toUpperCase()}`,
+                          label: 'Refill saver',
+                          type: 'percent',
+                          value: 5,
+                          productId: p.id,
+                          expiresAt: new Date(now().getTime() + 604800000).toISOString(),
+                          used: false,
+                        });
+                      add({ productId: p.id, variantLabel: i.variantLabel }, 1);
+                    }}
+                    className="mt-4 rounded-pill bg-primary px-4 py-2 text-xs font-bold text-background"
+                  >
+                    REFILL
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </Container>
+    </main>
+  );
+}

@@ -1,102 +1,474 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Bell, ChevronDown, Menu, Search, ShoppingBag, UserRound, X } from 'lucide-react'
-import { Link, NavLink } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Bell, Lock, Menu, Search, ShoppingBag, User, X } from 'lucide-react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Container } from '../ui/Container'
 import { Logo } from './Logo'
 import { useAuthStore } from '../../store/authStore'
 import { useCartStore } from '../../store/cartStore'
-import { products } from '../../data/products'
 import { useNotificationStore } from '../../store/notificationStore'
+import { navItems } from '../../config/nav'
+import { useNavBadges } from '../../hooks/useNavBadges'
 
-const topLinks = [
-  { to: '/shop', label: 'Build Your Own Kit' },
-  { to: '/shop', label: 'Shop All' },
-  { to: '/shop', label: 'Honest Reports' },
-]
-const categoryLinks = ['Hair', 'Body Care', 'Health & Fitness']
+// ─── NavLink item (shared by desktop nav + mobile drawer) ─────────────────────
+function NavItem({
+  item,
+  mobile = false,
+  onNavigate,
+}: {
+  item: (typeof navItems)[number]
+  mobile?: boolean
+  onNavigate?: () => void
+}) {
+  const user = useAuthStore(s => s.currentUser)
+  const badges = useNavBadges()
+  const loc = useLocation()
 
-function NavItem({ to, children, onClick }: { to: string; children: ReactNode; onClick?: () => void }) {
-  return <NavLink to={to} onClick={onClick} className={({ isActive }) => `rounded-sm py-2 text-sm font-medium transition-colors hover:text-accent ${isActive ? 'text-accent' : 'text-text'}`}>{children}</NavLink>
+  const lock   = !!item.requiresAuth && !user
+  const to     = lock ? '/login' : item.to
+  const state  = lock ? { from: item.to } : undefined
+  const due    = item.badgeKey === 'journey' && badges.journeyDue
+  const count  = item.badgeKey === 'packs' ? badges.packsAttention : 0
+  const isNew  = item.badgeKey === 'wishlab' && badges.wishlabNew
+
+  const ariaLabel = [
+    item.label,
+    due   ? ', check-in due'                   : '',
+    count ? `, ${count} packs need attention`  : '',
+    lock  ? ', login required'                 : '',
+  ].join('')
+
+  const isActive = loc.pathname === item.to || loc.pathname.startsWith(item.to + '/')
+
+  return (
+    <NavLink
+      to={to}
+      state={state}
+      onClick={onNavigate}
+      aria-label={ariaLabel}
+      className={() =>
+        [
+          'relative inline-flex items-center gap-1 whitespace-nowrap font-medium',
+          'transition-colors hover:text-accent focus-visible:outline-none',
+          mobile ? 'py-3 text-base' : 'py-2 text-sm',
+          isActive
+            ? 'text-primary underline decoration-accent decoration-2 underline-offset-[6px]'
+            : 'text-text',
+        ].join(' ')
+      }
+    >
+      <span>{item.label}</span>
+      {lock  && <Lock aria-hidden size={13} />}
+      {due   && <i aria-hidden className="h-2 w-2 rounded-full bg-accent" />}
+      {count > 0 && (
+        <i aria-hidden className="rounded-pill bg-accent px-1 text-[10px] not-italic text-background">
+          {count}
+        </i>
+      )}
+      {isNew && (
+        <i aria-hidden className="rounded-pill bg-sky px-1 text-[9px] not-italic text-accent">
+          NEW
+        </i>
+      )}
+    </NavLink>
+  )
 }
 
-function CategoryMenu() {
+// ─── Search flyout ─────────────────────────────────────────────────────────────
+function SearchFlyout({ onClose }: { onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const nav = useNavigate()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (q.trim()) nav(`/shop?q=${encodeURIComponent(q.trim())}`)
+    onClose()
+  }
+
   return (
-    <div className="group relative">
-      <button type="button" className="inline-flex items-center gap-1 rounded-sm py-2 text-sm font-medium text-text hover:text-accent" aria-haspopup="true">
-        Shop By Category <ChevronDown size={14} aria-hidden="true" />
-      </button>
-      <div className="invisible absolute left-0 top-full z-50 w-48 translate-y-1 rounded-card border border-accent-soft bg-background p-2 opacity-0 shadow-card transition-all group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
-        {categoryLinks.map((category) => <Link key={category} to={`/shop?category=${encodeURIComponent(category)}`} className="block rounded-lg px-3 py-2 text-sm text-text hover:bg-sky hover:text-accent">{category}</Link>)}
-      </div>
+    <div className="absolute inset-x-0 top-full z-50 border-b border-accent-soft bg-background shadow-card">
+      <Container>
+        <form onSubmit={submit} className="flex items-center gap-3 py-3">
+          <Search size={18} className="shrink-0 text-muted" aria-hidden />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search products…"
+            className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-muted"
+          />
+          {q && (
+            <button type="button" onClick={() => setQ('')} aria-label="Clear search">
+              <X size={16} className="text-muted" />
+            </button>
+          )}
+          <button
+            type="submit"
+            className="rounded-pill bg-primary px-4 py-1.5 text-xs font-bold text-background"
+          >
+            Go
+          </button>
+        </form>
+      </Container>
     </div>
   )
 }
 
-export function Header() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const currentUser = useAuthStore((state) => state.currentUser)
-  const logout = useAuthStore((state) => state.logout)
-  // Defensive fallbacks keep older persisted demo data from breaking a fresh build.
-  const cartCount = useCartStore((state) => state.count?.() ?? state.items?.reduce((total, item) => total + (item.qty || 0), 0) ?? 0)
-  const firstName = currentUser?.name.split(' ')[0] ?? null
-  const allNotifications = useNotificationStore((state) => state.notifications)
-  const notifications = useMemo(
-    () => currentUser ? (allNotifications ?? []).filter((item) => item.userId === currentUser.id) : [],
-    [allNotifications, currentUser?.id],
+// ─── Notifications dropdown ────────────────────────────────────────────────────
+function NotificationsDropdown({
+  userId,
+  onClose,
+}: {
+  userId: string
+  onClose: () => void
+}) {
+  const all  = useNotificationStore(s => s.notifications)
+  const mark = useNotificationStore(s => s.read)
+  const ref  = useRef<HTMLDivElement>(null)
+
+  const notes = useMemo(
+    () => all.filter(n => n.userId === userId).slice(0, 8),
+    [all, userId],
   )
-  const markRead = useNotificationStore((state) => state.read)
+
+  // close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-0 top-full z-50 mt-1 w-80 rounded-card bg-background shadow-card ring-1 ring-accent-soft/40"
+    >
+      <div className="flex items-center justify-between border-b border-accent-soft px-4 py-3">
+        <span className="text-sm font-semibold text-primary">Notifications</span>
+        <button onClick={onClose} aria-label="Close notifications">
+          <X size={15} className="text-muted" />
+        </button>
+      </div>
+
+      {notes.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-muted">No notifications yet</p>
+      ) : (
+        <ul className="max-h-80 divide-y divide-accent-soft overflow-y-auto">
+          {notes.map(n => (
+            <li key={n.id}>
+              <Link
+                to={n.link}
+                onClick={() => { mark(n.id); onClose() }}
+                className={`block px-4 py-3 text-sm transition-colors hover:bg-sky ${n.read ? 'opacity-60' : ''}`}
+              >
+                <p className={`font-medium ${n.read ? 'text-muted' : 'text-primary'}`}>
+                  {!n.read && (
+                    <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-badge align-middle" />
+                  )}
+                  {n.title}
+                </p>
+                <p className="mt-0.5 text-muted">{n.body}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ─── Account dropdown ──────────────────────────────────────────────────────────
+function AccountDropdown({ firstName, onLogout }: { firstName: string; onLogout: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const onKeydown = (event: KeyboardEvent) => event.key === 'Escape' && setDrawerOpen(false)
-    document.addEventListener('keydown', onKeydown)
-    return () => document.removeEventListener('keydown', onKeydown)
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        className="flex items-center gap-1.5 text-sm font-medium text-primary"
+      >
+        <User size={18} aria-hidden />
+        <span>Hi, {firstName}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-36 rounded-card bg-background p-1 shadow-card ring-1 ring-accent-soft/40">
+          <Link
+            to="/orders"
+            onClick={() => setOpen(false)}
+            className="block rounded px-3 py-2 text-sm transition-colors hover:bg-sky"
+          >
+            My Orders
+          </Link>
+          <Link
+            to="/account"
+            onClick={() => setOpen(false)}
+            className="block rounded px-3 py-2 text-sm transition-colors hover:bg-sky"
+          >
+            Account
+          </Link>
+          <button
+            onClick={() => { onLogout(); setOpen(false) }}
+            className="block w-full rounded px-3 py-2 text-left text-sm transition-colors hover:bg-sky"
+          >
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main Header ───────────────────────────────────────────────────────────────
+export function Header() {
+  const [drawerOpen, setDrawerOpen]   = useState(false)
+  const [searchOpen, setSearchOpen]   = useState(false)
+  const [notifOpen,  setNotifOpen]    = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
+
+  const user   = useAuthStore(s => s.currentUser)
+  const logout = useAuthStore(s => s.logout)
+  const cart   = useCartStore(s => s.count?.() ?? 0)
+  const all    = useNotificationStore(s => s.notifications)
+
+  const firstName = user?.name.split(' ')[0] ?? ''
+
+  const unread = useMemo(
+    () => all.some(n => n.userId === user?.id && !n.read),
+    [all, user?.id],
+  )
+
+  // Esc closes drawer / search / notif
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawerOpen(false)
+        setSearchOpen(false)
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
+  // Focus trap for drawer
+  useEffect(() => {
+    if (!drawerOpen) return
+    const el = drawerRef.current
+    if (!el) return
+    const focusable = el.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])',
+    )
+    focusable[0]?.focus()
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const first = focusable[0]
+      const last  = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last)  { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', trap)
+    return () => document.removeEventListener('keydown', trap)
+  }, [drawerOpen])
+
   const closeDrawer = () => setDrawerOpen(false)
+
   return (
     <header className="sticky top-0 z-40 border-b border-accent-soft/60 bg-background">
-      <Container className="flex h-16 items-center justify-between gap-3 md:h-[72px]">
-        <div className="flex min-w-0 items-center gap-2">
-          <button type="button" aria-label="Open navigation menu" onClick={() => setDrawerOpen(true)} className="rounded-full p-2 text-primary hover:bg-sky lg:hidden"><Menu size={22} /></button>
+      {/*
+        Mobile layout: hamburger | [logo centered absolutely] | icons
+        Desktop layout: logo | nav | icons  (all in normal flow)
+      */}
+      <Container className="relative flex h-16 items-center justify-between md:h-[72px]">
+
+        {/* ── Left: hamburger (mobile-only) ── */}
+        <div className="flex items-center">
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            className="p-2 lg:hidden"
+          >
+            <Menu />
+          </button>
+          {/* Logo: hidden on mobile (shown centered below), visible on desktop */}
+          <div className="hidden lg:block">
+            <Logo />
+          </div>
+        </div>
+
+        {/* Logo centered on mobile via absolute positioning */}
+        <div className="absolute left-1/2 -translate-x-1/2 lg:hidden">
           <Logo />
         </div>
-        <nav className="hidden flex-1 items-center justify-center gap-5 xl:gap-7 lg:flex" aria-label="Primary navigation">
-          <NavItem to="/shop">Build Your Own Kit</NavItem>
-          <CategoryMenu />
-          {topLinks.slice(1).map((link) => <NavItem key={link.label} to={link.to}>{link.label}</NavItem>)}
-          {firstName ? (
-            <div className="relative">
-              <button type="button" onClick={() => setAccountOpen((open) => !open)} className="inline-flex items-center gap-1 rounded-sm py-2 text-sm font-medium text-text hover:text-accent" aria-expanded={accountOpen}>Hi, {firstName} <ChevronDown size={14} /></button>
-              {accountOpen && <div className="absolute right-0 top-full z-50 w-40 rounded-card border border-accent-soft bg-background p-2 shadow-card"><Link to="/journey" className="block rounded-lg px-3 py-2 text-sm hover:bg-sky">My Journey</Link><Link to="/my-packs" className="block rounded-lg px-3 py-2 text-sm hover:bg-sky">My Packs</Link><Link to="/wishlab" className="block rounded-lg px-3 py-2 text-sm hover:bg-sky">Wishlab</Link><Link to="/orders" className="block rounded-lg px-3 py-2 text-sm hover:bg-sky">My orders</Link><Link to="/account" className="block rounded-lg px-3 py-2 text-sm hover:bg-sky">Account</Link><button type="button" onClick={logout} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-sky">Log out</button></div>}
-            </div>
-          ) : <NavItem to="/login">Login</NavItem>}
+
+        {/* ── Center: desktop nav ── */}
+        <nav aria-label="Main navigation" className="hidden items-center gap-6 lg:flex xl:gap-8">
+          {navItems.map(item => (
+            <NavItem key={item.label} item={item} />
+          ))}
         </nav>
-        <div className="flex items-center gap-0.5 text-primary sm:gap-1">
-          <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search products" className="rounded-full p-2 hover:bg-sky"><Search size={20} /></button>
-          <div className="relative"><button type="button" onClick={()=>setNotificationsOpen(!notificationsOpen)} aria-label="Notifications" className="relative rounded-full p-2 hover:bg-sky"><Bell size={20}/>{notifications.some(n=>!n.read)&&<span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-badge"/>}</button>{notificationsOpen&&<div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-card border border-accent-soft bg-background p-2 shadow-card">{notifications.length?notifications.map(n=><Link key={n.id} to={n.link} onClick={()=>{markRead(n.id);setNotificationsOpen(false)}} className={`block rounded-lg p-3 text-sm hover:bg-sky ${n.read?'text-muted':'text-text'}`}><b>{n.title}</b><br/><span className="text-xs">{n.body}</span></Link>):<p className="p-3 text-sm text-muted">No notifications yet.</p>}</div>}</div>
-          <Link to={firstName ? '/account' : '/login'} aria-label="Account" className="rounded-full p-2 hover:bg-sky"><UserRound size={20} /></Link>
-          <button type="button" onClick={() => useCartStore.getState().open()} aria-label={`Cart, ${cartCount} items`} className="relative rounded-full p-2 hover:bg-sky"><ShoppingBag size={20} />{cartCount > 0 && <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-badge px-1 text-[9px] font-bold text-background">{cartCount}</span>}</button>
+
+        {/* ── Right: search, bell, cart, account ── */}
+        <div className="flex items-center gap-1 text-primary">
+
+          {/* Search */}
+          <button
+            aria-label="Search"
+            aria-expanded={searchOpen}
+            onClick={() => { setSearchOpen(o => !o); setNotifOpen(false) }}
+            className="p-2"
+          >
+            <Search size={20} />
+          </button>
+
+          {/* Bell */}
+          <div className="relative">
+            <button
+              aria-label={unread ? 'Notifications, unread' : 'Notifications'}
+              aria-expanded={notifOpen}
+              onClick={() => { setNotifOpen(o => !o); setSearchOpen(false) }}
+              className="relative p-2"
+            >
+              <Bell size={20} />
+              {unread && (
+                <i aria-hidden className="absolute right-1 top-1 h-2 w-2 rounded-full bg-badge" />
+              )}
+            </button>
+
+            {notifOpen && user && (
+              <NotificationsDropdown
+                userId={user.id}
+                onClose={() => setNotifOpen(false)}
+              />
+            )}
+          </div>
+
+          {/* Cart */}
+          <button
+            onClick={() => useCartStore.getState().open()}
+            aria-label={`Cart, ${cart} item${cart !== 1 ? 's' : ''}`}
+            className="relative p-2"
+          >
+            <ShoppingBag size={20} />
+            {cart > 0 && (
+              <i aria-hidden className="absolute right-0 top-0 rounded-full bg-badge px-1 text-[9px] not-italic text-background">
+                {cart}
+              </i>
+            )}
+          </button>
+
+          {/* Account control – desktop only */}
+          <div className="hidden lg:block">
+            {user ? (
+              <AccountDropdown firstName={firstName} onLogout={logout} />
+            ) : (
+              <div className="ml-1 flex items-center gap-2">
+                <Link to="/login" className="text-sm font-medium text-primary">
+                  Login
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-pill border border-primary px-3 py-1.5 text-xs font-medium"
+                >
+                  Sign up
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </Container>
 
-      {searchOpen && <div className="fixed inset-0 z-50 bg-primary/35 p-4"><div className="mx-auto mt-12 max-w-xl rounded-card bg-background p-5 shadow-card" role="dialog" aria-modal="true" aria-label="Search products"><div className="flex gap-2"><input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){window.location.href=`/shop?q=${encodeURIComponent(search)}`}}} placeholder="Search products" className="flex-1 rounded-pill border border-accent-soft px-4 py-2 text-sm"/><button onClick={()=>setSearchOpen(false)} aria-label="Close search" className="p-2"><X size={20}/></button></div><div className="mt-3">{products.filter(p=>`${p.name} ${p.concern}`.toLowerCase().includes(search.toLowerCase())).map(p=><Link key={p.id} to={`/product/${p.slug}`} onClick={()=>setSearchOpen(false)} className="block rounded-lg px-3 py-3 text-sm hover:bg-sky">{p.name}<span className="ml-2 text-xs text-muted">{p.concern}</span></Link>)}</div></div></div>}
+      {/* Search flyout – spans full width below the header bar */}
+      {searchOpen && <SearchFlyout onClose={() => setSearchOpen(false)} />}
 
-      {drawerOpen && <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Mobile navigation">
-        <button type="button" aria-label="Close navigation menu" onClick={closeDrawer} className="absolute inset-0 cursor-default bg-primary/35" />
-        <div className="relative flex h-full w-[min(84vw,340px)] flex-col bg-background p-5 shadow-card">
-          <div className="flex items-center justify-between"><Logo onClick={closeDrawer} /><button type="button" aria-label="Close navigation menu" onClick={closeDrawer} className="rounded-full p-2 text-primary hover:bg-sky"><X size={21} /></button></div>
-          <nav className="mt-8 flex flex-col divide-y divide-accent-soft/60" aria-label="Mobile primary navigation">
-            <NavItem to="/shop" onClick={closeDrawer}>Build Your Own Kit</NavItem>
-            <div className="py-3"><p className="text-sm font-medium text-text">Shop By Category</p><div className="mt-2 flex flex-col gap-1 pl-3">{categoryLinks.map((category) => <Link key={category} to={`/shop?category=${encodeURIComponent(category)}`} onClick={closeDrawer} className="py-1.5 text-sm text-muted hover:text-accent">{category}</Link>)}</div></div>
-            {topLinks.slice(1).map((link) => <NavItem key={link.label} to={link.to} onClick={closeDrawer}>{link.label}</NavItem>)}
-            <NavItem to={firstName ? '/account' : '/login'} onClick={closeDrawer}>{firstName ? `Hi, ${firstName}` : 'Login'}</NavItem>
-          </nav>
+      {/* ── Mobile Drawer ── */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
+          <button
+            onClick={closeDrawer}
+            aria-label="Close menu"
+            className="absolute inset-0 bg-primary/35"
+            tabIndex={-1}
+          />
+          <aside
+            ref={drawerRef}
+            className="relative flex h-full w-[84vw] max-w-sm flex-col overflow-y-auto bg-background p-5 shadow-xl"
+          >
+            <div className="flex items-center justify-between">
+              <Logo />
+              <button onClick={closeDrawer} aria-label="Close menu" className="p-1">
+                <X />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              {user ? (
+                <p className="flex items-center gap-2 text-lg font-semibold text-primary">
+                  <User size={18} aria-hidden /> Hi, {firstName}
+                </p>
+              ) : (
+                <div className="flex gap-2">
+                  <Link
+                    to="/login"
+                    onClick={closeDrawer}
+                    className="rounded-pill bg-primary px-4 py-2 text-xs font-medium text-background"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    onClick={closeDrawer}
+                    className="rounded-pill border border-primary px-4 py-2 text-xs font-medium"
+                  >
+                    Sign up
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <nav aria-label="Mobile navigation" className="mt-6 flex flex-col border-t border-accent-soft/50 pt-2">
+              {navItems.map(item => (
+                <NavItem key={item.label} item={item} mobile onNavigate={closeDrawer} />
+              ))}
+            </nav>
+
+            {user && (
+              <div className="mt-2 flex flex-col border-t border-accent-soft/50 pt-2">
+                <Link to="/orders" onClick={closeDrawer} className="py-3 text-sm text-text hover:text-accent">
+                  My Orders
+                </Link>
+                <Link to="/account" onClick={closeDrawer} className="py-3 text-sm text-text hover:text-accent">
+                  Account
+                </Link>
+                <button
+                  onClick={() => { logout(); closeDrawer() }}
+                  className="py-3 text-left text-sm text-text hover:text-accent"
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </aside>
         </div>
-      </div>}
+      )}
     </header>
   )
 }
