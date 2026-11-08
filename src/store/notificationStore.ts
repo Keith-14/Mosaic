@@ -1,0 +1,3 @@
+import {create} from 'zustand';import{persist}from'zustand/middleware';import{now}from'./timeStore'
+export type Notification={id:string;userId:string;type:'reminder'|'reward'|'system';title:string;body:string;createdAt:string;read:boolean;link:string}
+export const useNotificationStore=create<{notifications:Notification[];add:(n:Omit<Notification,'id'|'createdAt'|'read'>)=>void;read:(id:string)=>void}>()(persist(set=>({notifications:[],add:n=>set(s=>({notifications:[{...n,id:crypto.randomUUID?.()??String(Date.now()),createdAt:now().toISOString(),read:false},...s.notifications]})),read:id=>set(s=>({notifications:s.notifications.map(n=>n.id===id?{...n,read:true}:n)}))}),{name:'bodywise-demo-notifications'}))

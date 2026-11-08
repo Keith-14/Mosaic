@@ -1,0 +1,3 @@
+import{create}from'zustand';import{persist}from'zustand/middleware';import{now}from'./timeStore'
+export type Wish={id:string;userId:string;vertical:string;ingredients:string[];fragrance:string;concern:string;name:string;why:string;status:'Submitted'|'Under review'|'Shortlisted'|'Selected'|'Not now';createdAt:string;votes:string[]}
+export const useWishlabStore=create<{items:Wish[];submit:(x:Omit<Wish,'id'|'createdAt'|'status'|'votes'>)=>void;vote:(id:string,u:string)=>void}>()(persist((set)=>({items:[],submit:x=>set(s=>({items:[{...x,id:crypto.randomUUID(),createdAt:now().toISOString(),status:'Submitted',votes:[]},...s.items]})),vote:(id,u)=>set(s=>({items:s.items.map(x=>x.id===id&&!x.votes.includes(u)?{...x,votes:[...x.votes,u]}:x)}))}),{name:'bodywise-demo-wishlab'}))
